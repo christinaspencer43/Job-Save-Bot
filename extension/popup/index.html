@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Job Intelligence</title>
+    <script type="module" crossorigin src="/popup/popup.js"></script>
+    <link rel="modulepreload" crossorigin href="/shared/permission-manager-Dgv0OlNz.js">
+    <link rel="stylesheet" crossorigin href="/popup/popup.css">
+  </head>
+  <body>
+    <main id="app" class="popup">
+      <header class="header">
+        <h1 class="header__title">Job Intelligence</h1>
+        <span id="page-type" class="pill pill--muted">Checking…</span>
+      </header>
+
+      <section id="permission-prompt" class="panel panel--action" hidden>
+        <p class="panel__text">
+          This site is not on the built-in list. Grant access to scan it?
+        </p>
+        <button id="grant-button" class="button button--primary" type="button">
+          Scan this site
+        </button>
+      </section>
+
+      <section id="empty-state" class="panel" hidden>
+        <p id="empty-text" class="panel__text">No job posting detected on this page.</p>
+      </section>
+
+      <section id="job-panel" class="panel" hidden>
+        <!-- Shown before the user clicks anything, so "already saved" is
+             something they see rather than something they find out. -->
+        <p id="saved-notice" class="saved-notice" hidden></p>
+        <h2 id="job-title" class="job__title"></h2>
+        <p id="job-meta" class="job__meta"></p>
+        <dl id="job-fields" class="fields"></dl>
+        <details class="details">
+          <summary class="details__summary">Extraction detail</summary>
+          <dl id="provenance" class="fields fields--small"></dl>
+        </details>
+      </section>
+
+      <section id="questions-panel" class="panel" hidden>
+        <h2 class="panel__heading">
+          Application questions
+          <span id="question-count" class="pill pill--muted"></span>
+        </h2>
+        <ul id="question-list" class="questions"></ul>
+
+        <details id="sensitive-details" class="details details--warn" hidden>
+          <summary class="details__summary">
+            Sensitive questions
+            <span id="sensitive-count" class="pill pill--warn"></span>
+          </summary>
+          <p class="details__note">
+            Detected so you know they were asked. Never auto-filled, never sent
+            anywhere, and any answer you have typed is not read.
+          </p>
+          <ul id="sensitive-list" class="questions"></ul>
+        </details>
+      </section>
+
+      <footer class="footer">
+        <button id="rescan-button" class="button" type="button">Rescan</button>
+        <button id="copy-button" class="button" type="button">Copy JSON</button>
+        <button id="save-button" class="button button--primary" type="button">Save</button>
+        <a id="options-link" class="link" href="#">Settings</a>
+      </footer>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </main>
+  </body>
+</html>

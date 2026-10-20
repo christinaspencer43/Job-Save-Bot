@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Job Intelligence — Settings</title>
+    <script type="module" crossorigin src="/options/options.js"></script>
+    <link rel="modulepreload" crossorigin href="/shared/permission-manager-Dgv0OlNz.js">
+    <link rel="stylesheet" crossorigin href="/options/options.css">
+  </head>
+  <body>
+    <main class="page">
+      <h1 class="page__title">Job Intelligence settings</h1>
+
+      <section class="section">
+        <h2 class="section__title">Scanning</h2>
+
+        <label class="field">
+          <input id="auto-scan" type="checkbox" />
+          <span>
+            <strong>Scan automatically</strong>
+            <small>Detect job pages without needing a click, on supported sites.</small>
+          </span>
+        </label>
+
+        <label class="field">
+          <input id="show-badge" type="checkbox" />
+          <span>
+            <strong>Show toolbar badge</strong>
+            <small>Display the detected question count on the extension icon.</small>
+          </span>
+        </label>
+      </section>
+
+      <section class="section">
+        <h2 class="section__title">Privacy</h2>
+
+        <label class="field">
+          <input id="capture-values" type="checkbox" />
+          <span>
+            <strong>Read answers you have already typed</strong>
+            <small>
+              Stays on this device and is never sent to a server. Never read for
+              demographic, EEO, criminal-history or salary-history questions,
+              regardless of this setting.
+            </small>
+          </span>
+        </label>
+
+        <label class="field">
+          <input id="telemetry" type="checkbox" />
+          <span>
+            <strong>Share anonymous diagnostics</strong>
+            <small>
+              Counts and timings only — page type, provider, how many questions
+              were found, and which extraction layer failed. Never job text,
+              never your answers, never full URLs. Domains only.
+            </small>
+          </span>
+        </label>
+      </section>
+
+      <section class="section">
+        <h2 class="section__title">Job board sync</h2>
+        <p class="section__note">
+          Saving a job keeps it on this device. Connect a Supabase project to
+          also send it to your job board. Leave this empty and nothing ever
+          leaves the browser.
+        </p>
+
+        <label class="field field--stacked">
+          <strong>Supabase project URL</strong>
+          <small>From Project settings → Data API. Looks like https://abcdefgh.supabase.co</small>
+          <input id="supabase-url" type="url" placeholder="https://your-project.supabase.co" />
+        </label>
+
+        <label class="field field--stacked">
+          <strong>Supabase anon key</strong>
+          <small>
+            The public anon key, not the service role key. It is meant to be
+            shipped in clients; row-level security is what keeps your jobs
+            private. Never paste the service role key here.
+          </small>
+          <input id="supabase-key" type="password" placeholder="eyJhbGciOi…" autocomplete="off" />
+        </label>
+
+        <div id="account" class="account">
+          <p id="account-state" class="account__state">Not connected.</p>
+
+          <div id="signin-form" class="account__form">
+            <input id="signin-email" type="email" placeholder="you@example.com" autocomplete="email" />
+            <input id="signin-password" type="password" placeholder="Password (min 6 characters)" autocomplete="current-password" />
+            <div class="account__step">
+              <button id="signin-submit" class="button button--primary" type="button">Sign in</button>
+              <button id="signup-submit" class="button" type="button">Create account</button>
+            </div>
+            <small>
+              Use the same email and password on the job board. Nothing is
+              emailed — the account lives in your own Supabase project.
+            </small>
+          </div>
+
+          <!-- Feedback belongs next to the control that caused it. The page-level
+               status line sits below the fold from here, so a message written
+               only there reads as "the button does nothing". -->
+          <p id="account-status" class="account__status" role="status" aria-live="polite" hidden></p>
+
+          <button id="signout" class="button button--danger" type="button" hidden>Sign out</button>
+        </div>
+      </section>
+
+      <section class="section">
+        <h2 class="section__title">Advanced backend</h2>
+        <label class="field field--stacked">
+          <strong>API base URL</strong>
+          <small>
+            Optional. Only used when no Supabase project is configured. Leave
+            empty to keep everything on this device. HTTPS required, except localhost.
+          </small>
+          <input id="api-base-url" type="url" placeholder="https://api.example.com" />
+        </label>
+      </section>
+
+      <section class="section">
+        <h2 class="section__title">Site access</h2>
+
+        <label class="field">
+          <input id="all-sites" type="checkbox" />
+          <span>
+            <strong>Work on all sites</strong>
+            <small>
+              Detect job postings anywhere, with no per-site permission prompt.
+              Chrome will ask once. Turning this off returns the extension to
+              asking for one site at a time.
+              <br />
+              Nothing else changes: the extension still only acts on a page it
+              classifies as a job posting, still reads nothing you have typed
+              unless you enable that above, and still sends nothing anywhere
+              unless you have connected a project.
+            </small>
+          </span>
+        </label>
+
+        <p class="section__note">
+          Built-in access covers the job boards listed below, whether or not the
+          option above is on. Anything else is granted one site at a time from
+          the popup.
+        </p>
+        <ul id="granted-origins" class="origins"></ul>
+        <details class="details">
+          <summary>Built-in sites and why each is needed</summary>
+          <dl id="host-rules" class="rules"></dl>
+        </details>
+      </section>
+
+      <section class="section">
+        <h2 class="section__title">Saved jobs</h2>
+        <p class="section__note">
+          <span id="extraction-count">0</span> kept on this device, newest first.
+          The most recent 50 are retained.
+        </p>
+
+        <div class="toolbar">
+          <input id="job-filter" type="search" placeholder="Filter by title, company or site" />
+          <button id="export-button" class="button" type="button">Copy all as JSON</button>
+          <button id="clear-button" class="button button--danger" type="button">Clear all</button>
+        </div>
+
+        <ul id="job-list" class="jobs"></ul>
+      </section>
+
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+    </main>
+  </body>
+</html>

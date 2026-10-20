@@ -1,0 +1,109 @@
+{
+  "manifest_version": 3,
+  "name": "Job Intelligence — Posting & Application Extractor",
+  "version": "0.1.0",
+  "description": "Detects job postings and application forms and extracts structured job and question data.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://boards.greenhouse.io/*",
+    "https://job-boards.greenhouse.io/*",
+    "https://*.greenhouse.io/*",
+    "https://jobs.lever.co/*",
+    "https://*.lever.co/*",
+    "https://*.myworkdayjobs.com/*",
+    "https://*.wd1.myworkdaysite.com/*",
+    "https://jobs.ashbyhq.com/*",
+    "https://www.linkedin.com/jobs/*",
+    "https://*.indeed.com/*",
+    "https://*.smartrecruiters.com/*",
+    "https://jobs.jobvite.com/*",
+    "https://*.icims.com/*",
+    "https://*.oraclecloud.com/*",
+    "https://*.taleo.net/*",
+    "https://*.bamboohr.com/*",
+    "https://myjobs.adp.com/*",
+    "https://workforcenow.adp.com/*",
+    "https://*.ashbyhq.com/*",
+    "https://*.workable.com/*",
+    "https://ats.rippling.com/*",
+    "https://*.applytojob.com/*",
+    "https://jobright.ai/jobs/*",
+    "https://*.jobdiva.com/*",
+    "https://recruiting.ultipro.com/*",
+    "https://*.supabase.co/*"
+  ],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "action": {
+    "default_title": "Job Intelligence",
+    "default_popup": "popup/index.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "options_ui": {
+    "page": "options/index.html",
+    "open_in_tab": true
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://boards.greenhouse.io/*",
+        "https://job-boards.greenhouse.io/*",
+        "https://*.greenhouse.io/*",
+        "https://jobs.lever.co/*",
+        "https://*.lever.co/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://*.wd1.myworkdaysite.com/*",
+        "https://jobs.ashbyhq.com/*",
+        "https://www.linkedin.com/jobs/*",
+        "https://*.indeed.com/*",
+        "https://*.smartrecruiters.com/*",
+        "https://jobs.jobvite.com/*",
+        "https://*.icims.com/*",
+        "https://*.oraclecloud.com/*",
+        "https://*.taleo.net/*",
+        "https://*.bamboohr.com/*",
+        "https://myjobs.adp.com/*",
+        "https://workforcenow.adp.com/*",
+        "https://*.ashbyhq.com/*",
+        "https://*.workable.com/*",
+        "https://ats.rippling.com/*",
+        "https://*.applytojob.com/*",
+        "https://jobright.ai/jobs/*",
+        "https://*.jobdiva.com/*",
+        "https://recruiting.ultipro.com/*"
+      ],
+      "js": [
+        "content/content.js"
+      ],
+      "all_frames": true,
+      "run_at": "document_end"
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; frame-ancestors 'none';"
+  },
+  "web_accessible_resources": [],
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "minimum_chrome_version": "116"
+}

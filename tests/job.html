@@ -1,0 +1,14 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Job posting (fixture)</title></head>
+<body>
+<h1 id="title">Job posting</h1>
+<p id="company"></p>
+<p>A local stand-in for an employer's posting. Nothing here is real.</p>
+<script>
+  const q = new URLSearchParams(location.search);
+  document.getElementById('title').textContent = q.get('title') || 'Job posting';
+  document.getElementById('company').textContent = q.get('company') || '';
+</script>
+</body>
+</html>

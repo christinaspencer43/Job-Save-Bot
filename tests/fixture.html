@@ -1,0 +1,166 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { margin: 0; font-family: sans-serif; background: #f5f6f8; }
+  .shell { display: flex; }
+  .side { width: 240px; height: 100vh; background: #fff; }
+  .main { flex: 1; padding: 16px; }
+  .tabs { display: flex; gap: 24px; padding: 12px 0; font-weight: 600; }
+  .a1b2c3 { background: #fff; border-radius: 12px; margin-bottom: 16px; padding: 18px;
+            position: relative; display: flex; }
+  .d4e5f6 { flex: 1; }
+  .x9y8z7 { position: absolute; top: 14px; right: 18px; width: 24px; height: 24px;
+            cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .title { font-size: 20px; font-weight: 700; margin: 6px 0; }
+  .meta { color: #6b7280; font-size: 13px; }
+  .row { display: flex; gap: 40px; margin: 14px 0; font-size: 13px; }
+  .actions { display: flex; align-items: center; gap: 10px; justify-content: flex-end; }
+  .icon-btn { width: 34px; height: 34px; border-radius: 50%; border: 1px solid #e5e7eb;
+              background: #fff; cursor: pointer; }
+  .q7w8e9 { background: #22e07a; border: none; border-radius: 20px; padding: 12px 22px;
+            font-weight: 700; cursor: pointer; }
+  .score { width: 170px; background: #0b1b16; color: #fff; border-radius: 10px; padding: 14px; }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none;
+           align-items: center; justify-content: center; }
+  .modal.open { display: flex; }
+  .sheet { background: #fff; border-radius: 12px; padding: 28px; width: 460px; text-align: center; }
+  .sheet button { display: block; width: 100%; padding: 14px; margin: 10px 0;
+                  border-radius: 8px; border: 1px solid #ddd; cursor: pointer; font-size: 15px; }
+  .menu { position: absolute; top: 40px; right: 10px; background: #fff; border-radius: 8px;
+          box-shadow: 0 6px 24px rgba(0,0,0,.18); padding: 8px 0; display: none; z-index: 5; }
+  .menu.open { display: block; }
+  .menu div { padding: 10px 20px; cursor: pointer; white-space: nowrap; }
+  .panel { position: fixed; top: 0; right: 0; width: 320px; height: 100vh; background: #fff;
+           box-shadow: -6px 0 24px rgba(0,0,0,.18); padding: 20px; display: none; }
+  .panel.open { display: block; }
+  .pbtn { display: block; width: 240px; height: 40px; margin: 12px 0; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="side">Jobs Resume Profile Agent</div>
+  <div class="main">
+    <div class="tabs"><span>Recommended</span><span>Liked 0</span><span>Applied 187</span><span>External 0</span></div>
+    <div id="list"></div>
+  </div>
+</div>
+
+<div class="modal" id="autofill-modal">
+  <div class="sheet">
+    <h2>Apply 5x Faster with Autofill</h2>
+    <button id="yes-autofill">Yes, Enable Autofill Now</button>
+    <button id="no-manual">No, Apply Manually</button>
+    <label><input type="checkbox"> Do not remind me again</label>
+  </div>
+</div>
+
+<aside class="panel" id="easy-panel">
+  <h2>Easy Apply</h2>
+  <button class="pbtn">Turn off Easy Apply</button>
+  <button class="pbtn">Start to Autofill</button>
+  <button class="pbtn" id="company-site">Continue to company site</button>
+</aside>
+
+<div class="modal" id="applied-modal">
+  <div class="sheet">
+    <h2>Did you apply ?</h2>
+    <button id="yes-applied">Yes, I applied!</button>
+    <button id="no-applied">No, I didn't apply</button>
+  </div>
+</div>
+
+<script>
+const JOBS = [
+  { company: 'CareMetx, LLC', title: 'Principal Engineer I, Data', kind: 'autofill', score: '62%' },
+  { company: 'RENFROE', title: 'Senior Software Engineer', kind: 'now', score: '93%' },
+  { company: 'Ping Identity', title: 'Senior Software Engineer', kind: 'autofill', score: '86%' },
+  { company: 'BigRio', title: 'Senior Software Developer Transformation Engineering', kind: 'now', score: '86%' },
+  { company: 'Fleetio', title: 'Senior Software Engineer, Marketplace Payments', kind: 'easy', score: '88%' },
+];
+// ?noask=1: Jobright never asks "Did you apply?" after the posting opens (2026-10-16).
+const NO_ASK = new URLSearchParams(location.search).has('noask');
+const LABELS = { autofill: 'APPLY WITH AUTOFILL', now: 'APPLY NOW', easy: 'EASY APPLY' };
+
+function render() {
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+  JOBS.forEach((job, index) => {
+    const card = document.createElement('div');
+    card.className = 'a1b2c3';
+    card.innerHTML = `
+      <div class="d4e5f6">
+        <div class="x9y8z7" data-role="kebab">
+          <svg width="16" height="4" viewBox="0 0 16 4"><circle cx="2" cy="2" r="2"/><circle cx="8" cy="2" r="2"/><circle cx="14" cy="2" r="2"/></svg>
+        </div>
+        <div class="meta">1 day ago &middot; 5 school alumni &middot; Early applicant</div>
+        <div class="title">${job.title}</div>
+        <div class="meta">${job.company} / Biotechnology &middot; Late Stage</div>
+        <div class="row"><span>United States</span><span>Full-time</span><span>$128K/yr - $186K/yr</span></div>
+        <div class="row"><span>Remote</span><span>Senior Level</span><span>5+ years exp</span></div>
+        <div class="actions">
+          <button class="icon-btn" aria-label="not interested"></button>
+          <button class="icon-btn" aria-label="like"></button>
+          <button class="q7w8e9">${LABELS[job.kind]}</button>
+        </div>
+        <div class="menu">
+          <div data-action="remove">Remove From List</div>
+          <div>Already Applied</div>
+          <div>Share</div>
+          <div>Report Issue</div>
+        </div>
+      </div>
+      <div class="score">${job.score}<br>STRONG MATCH</div>`;
+    list.appendChild(card);
+
+    card.querySelector('[data-role="kebab"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      card.querySelector('.menu').classList.add('open');
+    });
+    card.querySelector('[data-action="remove"]').addEventListener('click', () => {
+      JOBS.splice(JOBS.indexOf(job), 1);
+      render();
+    });
+    card.querySelector('.q7w8e9').addEventListener('click', () => {
+      window.__pending = job;
+      if (job.kind === 'autofill') {
+        document.getElementById('autofill-modal').classList.add('open');
+      } else if (job.kind === 'easy') {
+        document.getElementById('easy-panel').classList.add('open');
+      }
+    });
+  });
+}
+
+document.getElementById('no-manual').addEventListener('click', (e) => {
+  document.getElementById('autofill-modal').classList.remove('open');
+  window.__ctrlUsed = e.ctrlKey || e.metaKey;
+  // Each card opens its own job's page (Stage 04: the scanner checks the page
+  // shows the job that was picked).
+  const picked = window.__pending || {};
+  window.open('job.html?title=' + encodeURIComponent(picked.title || '') + '&company='
+    + encodeURIComponent(picked.company || ''), e.ctrlKey ? '_blank' : '_self');
+  if (!NO_ASK) document.getElementById('applied-modal').classList.add('open');
+});
+document.getElementById('company-site').addEventListener('click', () => {
+  document.getElementById('easy-panel').classList.remove('open');
+  const picked = window.__pending || {};
+  window.__companySiteClicks = (window.__companySiteClicks || 0) + 1;
+  window.open('job.html?title=' + encodeURIComponent(picked.title || '') + '&company='
+    + encodeURIComponent(picked.company || ''), '_blank');
+  if (!NO_ASK) document.getElementById('applied-modal').classList.add('open');
+});
+document.getElementById('yes-applied').addEventListener('click', () => {
+  document.getElementById('applied-modal').classList.remove('open');
+  const job = window.__pending;
+  if (job) { JOBS.splice(JOBS.indexOf(job), 1); render(); }
+});
+document.getElementById('no-applied').addEventListener('click', () => {
+  document.getElementById('applied-modal').classList.remove('open');
+});
+
+render();
+</script>
+</body>
+</html>
