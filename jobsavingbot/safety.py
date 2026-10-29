@@ -1,8 +1,8 @@
 """One switch for the actions that change the user's real data.
 
 Answering Jobright's "Did you apply?" / "Remove From List", writing a job
-to the database through the extension, and sending it to the Google Sheet pass
-through `guard()` first.
+to the database through the extension, and sending it to the Google Sheet or
+to KIASA pass through `guard()` first.
 
 Safe mode is off by default. With JOBSAVINGBOT_SAFE_MODE=1 (the test suite
 sets it for every test) a guarded action is allowed only against a local
@@ -24,6 +24,7 @@ ACTIONS = frozenset({
     "database",    # saving a job through the extension (Supabase)
     "jobright",    # changing Jobright state (applied / not applied / removed)
     "sheet",       # sending saved jobs to the Google Sheet's web app
+    "kiasa",       # posting saved jobs to KIASA, and reporting runs to it
 })
 
 SANDBOX_SUFFIXES = (".test", ".invalid", ".example", ".localhost")

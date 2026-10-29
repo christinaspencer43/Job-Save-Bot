@@ -1,4 +1,7 @@
-"""The Job Saving Bot window: Open Chrome, Start N, Stop, a log and the counts."""
+"""The Job Saving Bot window: Open Chrome, Start N, Stop, a log and the counts.
+
+Connected to KIASA (box 4), it also takes runs KIASA's admins ask for, tells
+KIASA how each run goes, and stays in the tray when its window is closed."""
 
 from __future__ import annotations
 
@@ -9,11 +12,13 @@ import threading
 import time
 from pathlib import Path
 
-from PySide6 import QtCore, QtWidgets
+from PySide6 import QtCore, QtGui, QtNetwork, QtWidgets
 
+from . import __version__, winstart
 from . import chrome as chrome_mod
+from . import kiasa as kiasa_mod
 from . import sheets
-from .config import Settings, default_profile_dir
+from .config import APP_DIR, Settings, default_profile_dir
 from .extension import ExtensionNotFound, find_extension_id, load_instructions
 from .runner import BotRunner, SetupError, StopRequested
 
@@ -107,7 +112,7 @@ class RunWorker(QtCore.QObject):
     done = QtCore.Signal(dict)
     failed = QtCore.Signal(str)
 
-    def __init__(self, settings: Settings, count: int):
+    def __init__(self, settings: Settings, count: int, on_saved=None):
         super().__init__()
         self.count = count
         self.runner = BotRunner(
@@ -115,6 +120,7 @@ class RunWorker(QtCore.QObject):
             log=lambda message, level="info": self.log.emit(message, level),
             on_stats=self.stats.emit,
             on_progress=self.progress.emit,
+            on_saved=on_saved,
         )
 
     @QtCore.Slot()
@@ -139,6 +145,12 @@ class RunWorker(QtCore.QObject):
 
 class MainWindow(QtWidgets.QWidget):
     status_ready = QtCore.Signal(dict)
+    # From KIASA's threads to the window's: how the connection is, a run asked
+    # for, Stop pressed on KIASA, and a line for the log.
+    kiasa_status = QtCore.Signal(str, str)
+    kiasa_run = QtCore.Signal(object, object)
+    kiasa_stop = QtCore.Signal()
+    kiasa_log = QtCore.Signal(str, str)
 
     def __init__(self, poll: bool = True):
         super().__init__()
@@ -155,12 +167,27 @@ class MainWindow(QtWidgets.QWidget):
         self._closing = False
         self._chrome_live = False
         self._start_time = 0.0
+        # KIASA: the check-ins, the saved jobs on their way, the run's report,
+        # and what the bot last found wrong (told to KIASA until a run goes).
+        self._remote: kiasa_mod.RemoteControl | None = None
+        self._outbox: kiasa_mod.KiasaOutbox | None = None
+        self._report: kiasa_mod.RunReport | None = None
+        self._stop_from_kiasa = False
+        self._opening_for_run = False
+        self._trouble: tuple[str, str] | None = None
+        self._quitting = False
+        self._tray: QtWidgets.QSystemTrayIcon | None = None
+        self._told_tray = False
 
         self.setWindowTitle("Job Saving Bot")
-        self.setMinimumSize(760, 680)
+        self.setMinimumSize(760, 700)
         self.setStyleSheet(STYLESHEET)
         self._build()
         self.status_ready.connect(self._show_chrome_status)
+        self.kiasa_status.connect(self._show_kiasa_status)
+        self.kiasa_run.connect(self._kiasa_run)
+        self.kiasa_stop.connect(lambda: self._stop(from_kiasa=True))
+        self.kiasa_log.connect(self.append_log)
         self._update_counts({})
 
         self.append_log(
@@ -175,6 +202,9 @@ class MainWindow(QtWidgets.QWidget):
         if poll:
             self._update_chrome_status()
             self._status_timer.start(3000)
+            self._make_tray()
+            if self.settings.kiasa_code:
+                self._connect_kiasa(self.settings.kiasa_code)
 
     # -- layout ------------------------------------------------------------
 
@@ -227,12 +257,12 @@ class MainWindow(QtWidgets.QWidget):
         self.start_button.setObjectName("primary")
         self.start_button.setFixedWidth(110)
         self.start_button.setEnabled(False)
-        self.start_button.clicked.connect(self._start)
+        self.start_button.clicked.connect(lambda: self._start())
         self.stop_button = QtWidgets.QPushButton("Stop")
         self.stop_button.setObjectName("danger")
         self.stop_button.setFixedWidth(110)
         self.stop_button.setEnabled(False)
-        self.stop_button.clicked.connect(self._stop)
+        self.stop_button.clicked.connect(lambda: self._stop())
         run.addWidget(self.start_button)
         run.addWidget(self.stop_button)
         root.addWidget(run_box)
@@ -273,6 +303,33 @@ class MainWindow(QtWidgets.QWidget):
         root.addWidget(sheet_box)
         self._show_key()
         self._show_sheet_status()
+
+        kiasa_box = QtWidgets.QGroupBox("4 - KIASA (optional)")
+        box = QtWidgets.QGridLayout(kiasa_box)
+        self.kiasa_code = QtWidgets.QLineEdit(self.settings.kiasa_code)
+        self.kiasa_code.setPlaceholderText("KIASA-BOT1....  (from KIASA: Job desk > Jobs > Jobright bot > Connect a computer)")
+        self.kiasa_code.setEchoMode(QtWidgets.QLineEdit.EchoMode.Password)
+        self.kiasa_connect_button = QtWidgets.QPushButton("Connect")
+        self.kiasa_connect_button.clicked.connect(lambda: self._connect_kiasa(self.kiasa_code.text()))
+        self.kiasa_disconnect_button = QtWidgets.QPushButton("Disconnect")
+        self.kiasa_disconnect_button.clicked.connect(self._disconnect_kiasa)
+        self.kiasa_status_label = QtWidgets.QLabel()
+        self.kiasa_status_label.setWordWrap(True)
+        self.autostart_box = QtWidgets.QCheckBox("Start with Windows and keep running in the tray")
+        self.autostart_box.setToolTip("Starts when you sign in to Windows, starts again within 10 minutes if it "
+                                      "ever stops, and keeps the computer awake while connected to KIASA.")
+        self.autostart_box.setChecked(winstart.autostart_enabled())
+        self.autostart_box.toggled.connect(self._set_autostart)
+        box.addWidget(QtWidgets.QLabel("Code"), 0, 0)
+        box.addWidget(self.kiasa_code, 0, 1)
+        box.addWidget(self.kiasa_connect_button, 0, 2)
+        box.addWidget(self.kiasa_disconnect_button, 0, 3)
+        box.addWidget(self.kiasa_status_label, 1, 1, 1, 3)
+        box.addWidget(self.autostart_box, 2, 1, 1, 3)
+        box.setColumnStretch(1, 1)
+        root.addWidget(kiasa_box)
+        self._show_kiasa_status("Off. Each saved job is also posted to KIASA's job list once you connect, "
+                                "and KIASA's admins can start, stop and schedule runs.", "off")
 
         self.counts_label = QtWidgets.QLabel()
         self.counts_label.setObjectName("counts")
@@ -355,7 +412,7 @@ class MainWindow(QtWidgets.QWidget):
 
     # -- background jobs -----------------------------------------------------
 
-    def _run_background(self, job, finished, buttons=()):
+    def _run_background(self, job, finished, buttons=(), failed=None):
         for button in buttons:
             button.setEnabled(False)
         worker = _Worker(job)
@@ -381,7 +438,11 @@ class MainWindow(QtWidgets.QWidget):
 
         def on_failed(message):
             self.append_log(message, "error")
-            cleanup()
+            try:
+                if failed:
+                    failed(message)
+            finally:
+                cleanup()
 
         done_relay = _OnUiThread(on_done, self)
         failed_relay = _OnUiThread(on_failed, self)
@@ -390,10 +451,13 @@ class MainWindow(QtWidgets.QWidget):
         self._bg.append((thread, worker))
         thread.start()
 
-    def _open_chrome(self):
+    def _open_chrome(self, then=None):
+        """Open the bot's Chrome; `then(True)` once it is up, `then(False)` if it did not open."""
+        then = then or (lambda ok: None)
         chrome_path = self.settings.chrome_path or chrome_mod.find_chrome()
         if not chrome_path:
             self.append_log("Could not find chrome.exe - set chrome_path in settings.json.", "error")
+            then(False)
             return
         port = self.settings.debug_port
         profile_dir = Path(self.settings.profile_dir)
@@ -430,8 +494,10 @@ class MainWindow(QtWidgets.QWidget):
             self.append_log(
                 "First time? Sign in to Jobright in that window (once - the profile keeps it), "
                 "open Recommended jobs, then press Start.", "info")
+            self._chrome_live = True
+            then(True)
 
-        self._run_background(job, finished, buttons=[self.open_button])
+        self._run_background(job, finished, buttons=[self.open_button], failed=lambda message: then(False))
 
     def _show_extension_folder(self):
         folder = self.settings.extension_dir
@@ -572,15 +638,27 @@ class MainWindow(QtWidgets.QWidget):
 
     # -- run ---------------------------------------------------------------
 
-    def _start(self):
+    def _start(self, count: int | None = None, report: kiasa_mod.RunReport | None = None):
+        """Start a run: N from the box, or what KIASA asked for (with its report).
+        Connected to KIASA, a run started here is reported there too."""
         if self._thread is not None:
+            if report:
+                report.finish("failed", "The bot was already busy with another run.", wait=0)
             return
         if (self.sheet_url.text().strip() != self.settings.google_sheet_url
                 or self.sheet_secret.text() != self.settings.google_sheet_secret) and not self._save_sheet():
+            if report:
+                report.finish("failed", "The bot's Google Sheet setting needs fixing on the computer.", wait=0)
             return
-        count = self.count_spin.value()
-        self.settings.run_count = count
-        self.settings.save()
+        if count is None:
+            count = self.count_spin.value()
+            self.settings.run_count = count
+            self.settings.save()
+            if self._remote is not None:
+                report = self._remote.begin(None, count)
+        self._report = report
+        self._stop_from_kiasa = False
+        self._trouble = None
         self._update_counts({})
         self.progress.setMaximum(count)
         self.progress.setValue(0)
@@ -588,7 +666,7 @@ class MainWindow(QtWidgets.QWidget):
         self._start_time = time.monotonic()
         self.append_log(f"Run started - {count} card(s)", "step")
 
-        worker = RunWorker(self.settings, count)
+        worker = RunWorker(self.settings, count, on_saved=self._saved_for_kiasa if self._outbox else None)
         thread = QtCore.QThread(self)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
@@ -597,6 +675,9 @@ class MainWindow(QtWidgets.QWidget):
         worker.progress.connect(self._update_progress)
         worker.done.connect(self._run_finished)
         worker.failed.connect(self._run_failed)
+        if report:
+            worker.log.connect(report.line)
+            worker.stats.connect(report.stats)
         self._thread = thread
         self._run_worker = worker
         self.start_button.setEnabled(False)
@@ -605,9 +686,17 @@ class MainWindow(QtWidgets.QWidget):
         self.close_button.setEnabled(False)
         thread.start()
 
-    def _stop(self):
+    def _saved_for_kiasa(self, row: dict):
+        """A saved job, on its way to KIASA (called on the run's thread)."""
+        outbox, report = self._outbox, self._report
+        if outbox is not None:
+            outbox.add(kiasa_mod.job_for_kiasa(row, report.run_id if report else None))
+
+    def _stop(self, from_kiasa: bool = False):
         if self._run_worker:
-            self.append_log("Stopping at the current step...", "warn")
+            self._stop_from_kiasa = from_kiasa
+            self.append_log("Stopped from KIASA - stopping at the current step..." if from_kiasa
+                            else "Stopping at the current step...", "warn")
             self._run_worker.request_stop()
             self.stop_button.setEnabled(False)
 
@@ -625,12 +714,33 @@ class MainWindow(QtWidgets.QWidget):
             "in {mins:.0f}m {secs:02.0f}s".format(mins=elapsed // 60, secs=elapsed % 60, **stats),
             "ok",
         )
+        reason = self._run_worker.runner.stopped_reason if self._run_worker else ""
+        if self._report:
+            self._report.stats(stats)
+            if reason == "stopped by the user":
+                self._report.finish("stopped", "Stopped from KIASA." if self._stop_from_kiasa
+                                    else "Stopped on the computer.", wait=0)
+            else:
+                self._report.finish("done", f"Ended: {reason}." if reason else "", wait=0)
+        self._report = None
         self._teardown_thread()
         self._show_sheet_status()
 
     @QtCore.Slot(str)
     def _run_failed(self, message: str):
         self.append_log(f"Run failed: {message}", "error")
+        if "not signed in" in message:
+            self._trouble = ("sign_in", "Jobright wants signing in again in the bot's Chrome.")
+        elif "extension" in message:
+            self._trouble = ("setup", "The Job Intelligence extension needs a hand on the computer: "
+                                      "see Job Saving Bot's log there.")
+        elif self._run_worker is not None:
+            self._trouble = ("error", f"The last run failed: {message}"[:300])
+        if self._report:
+            if self._run_worker:
+                self._report.stats(self._run_worker.runner.stats.as_dict())
+            self._report.finish("failed", message[:300], wait=0)
+        self._report = None
         self._teardown_thread()
 
     def _teardown_thread(self):
@@ -645,7 +755,142 @@ class MainWindow(QtWidgets.QWidget):
         self.close_button.setEnabled(True)
         self._update_chrome_status()
 
+    # -- KIASA ---------------------------------------------------------------
+
+    def _connect_kiasa(self, code: str):
+        """Connect with a code from KIASA (or the saved one, at start)."""
+        try:
+            connection = kiasa_mod.parse_code(code)
+        except ValueError as exc:
+            self._show_kiasa_status(str(exc), "error")
+            return
+        self._drop_kiasa()
+        code = "".join(code.split())
+        if code != self.settings.kiasa_code:
+            self.settings.kiasa_code = code
+            self.settings.save()
+        self.kiasa_code.setText(code)
+        client = kiasa_mod.KiasaClient(connection)
+        self._outbox = kiasa_mod.KiasaOutbox(client, log=self.kiasa_log.emit)
+        self._outbox.start()  # also sends jobs an earlier run left behind
+        self._remote = kiasa_mod.RemoteControl(
+            client, status=self._kiasa_state, log=self.kiasa_log.emit,
+            on_run=self.kiasa_run.emit, on_status=self.kiasa_status.emit, on_stop=self.kiasa_stop.emit,
+        ).start()
+        winstart.keep_awake(True)
+        self._show_kiasa_status("Connecting to KIASA...", "off")
+
+    def _drop_kiasa(self):
+        if self._remote is not None:
+            self._remote.close()
+        if self._outbox is not None:
+            self._outbox.close(timeout=3.0)
+        self._remote = None
+        self._outbox = None
+        winstart.keep_awake(False)
+
+    def _disconnect_kiasa(self):
+        self._drop_kiasa()
+        self.settings.kiasa_code = ""
+        self.settings.save()
+        self.kiasa_code.clear()
+        if self.autostart_box.isChecked():
+            self.autostart_box.setChecked(False)  # nothing to stay ready for
+        self._show_kiasa_status("Disconnected. Saved jobs are no longer posted to KIASA, and KIASA cannot "
+                                "start runs here.", "off")
+        self.append_log("Disconnected from KIASA.", "warn")
+
+    def _kiasa_state(self) -> dict:
+        """How the bot is, for KIASA's admins (asked from the check-in thread)."""
+        if self._thread is not None or self._opening_for_run:
+            return {"state": "busy", "detail": ""}
+        if self._trouble:
+            state, detail = self._trouble
+            return {"state": state, "detail": detail}
+        return {"state": "ready", "detail": "" if self._chrome_live else "Chrome opens when a run starts."}
+
+    @QtCore.Slot(str, str)
+    def _show_kiasa_status(self, text: str, tone: str):
+        colors = {"ok": "#3fb950", "warn": "#d29922", "error": "#f85149"}
+        self.kiasa_status_label.setText(text)
+        self.kiasa_status_label.setStyleSheet(f"color: {colors.get(tone, '#8b949e')}; font-size: 11px;")
+        self.kiasa_disconnect_button.setEnabled(bool(self.settings.kiasa_code))
+        if tone == "error" and self._remote is not None and "no longer knows" in text:
+            self.append_log(text, "error")
+
+    @QtCore.Slot(object, object)
+    def _kiasa_run(self, run: dict, report: kiasa_mod.RunReport):
+        """A run KIASA asked for: open Chrome first if it is closed, then go."""
+        cards = max(1, int(run.get("cards") or 1))
+        origin = {"schedule": "on schedule", "admin": "by an admin"}.get(run.get("origin"), "")
+        self.append_log(f"KIASA asks for a run of {cards} card(s) {origin}".strip(), "step")
+        if self._thread is not None or self._opening_for_run:
+            report.finish("failed", "The bot was already busy with another run.", wait=0)
+            return
+        if self._chrome_live:
+            self._start(cards, report)
+            return
+        self._opening_for_run = True
+        report.line("Opening the bot's Chrome", "step")
+
+        def opened(ok: bool):
+            self._opening_for_run = False
+            if ok:
+                # After the opening job has tidied up its buttons.
+                QtCore.QTimer.singleShot(1500, lambda: self._start(cards, report))
+            else:
+                report.finish("failed", "Chrome could not be opened on the computer.", wait=0)
+
+        self._open_chrome(then=opened)
+
+    def _set_autostart(self, on: bool):
+        problem = winstart.set_autostart(on)
+        if problem:
+            self.append_log(f"Start with Windows: {problem}", "error")
+            self.autostart_box.blockSignals(True)
+            self.autostart_box.setChecked(winstart.autostart_enabled())
+            self.autostart_box.blockSignals(False)
+            return
+        self.append_log("Starts with Windows (in the tray), and again within 10 minutes if it ever stops."
+                        if on else "No longer starts with Windows.", "ok")
+
+    # -- the tray ------------------------------------------------------------
+
+    def _make_tray(self):
+        if not QtWidgets.QSystemTrayIcon.isSystemTrayAvailable():
+            return
+        icon = QtGui.QIcon(str(APP_DIR / "extension" / "icons" / "icon-32.png"))
+        self.setWindowIcon(icon)
+        self._tray = QtWidgets.QSystemTrayIcon(icon, self)
+        self._tray.setToolTip(f"Job Saving Bot {__version__}")
+        menu = QtWidgets.QMenu(self)
+        menu.addAction("Open Job Saving Bot", self.bring_up)
+        menu.addSeparator()
+        menu.addAction("Quit", self.quit_for_good)
+        self._tray.setContextMenu(menu)
+        self._tray.activated.connect(lambda reason: self.bring_up()
+                                     if reason == QtWidgets.QSystemTrayIcon.ActivationReason.Trigger else None)
+        self._tray.show()
+
+    def bring_up(self):
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def quit_for_good(self):
+        self._quitting = True
+        self.close()
+
     def closeEvent(self, event):  # noqa: N802 - Qt API
+        # Connected to KIASA, closing the window leaves the bot in the tray, ready.
+        if self._remote is not None and self._tray is not None and not self._quitting:
+            event.ignore()
+            self.hide()
+            if not self._told_tray:
+                self._tray.showMessage("Job Saving Bot", "Still running in the tray, ready for KIASA. "
+                                       "Right-click the icon to quit.", QtWidgets.QSystemTrayIcon.MessageIcon.Information)
+                self._told_tray = True
+            return
         self._closing = True
         self._status_timer.stop()
         if self._run_worker is not None:
@@ -656,12 +901,53 @@ class MainWindow(QtWidgets.QWidget):
         for thread, _ in list(self._bg):
             thread.quit()
             thread.wait(3000)
+        self._drop_kiasa()
+        if self._tray is not None:
+            self._tray.hide()
         super().closeEvent(event)
+        QtWidgets.QApplication.quit()
 
 
-def main() -> int:
-    app = QtWidgets.QApplication(sys.argv)
+def _single_instance(app: QtWidgets.QApplication, quiet: bool):
+    """The one copy of the app for this Windows user: a second one hands over
+    (the first shows its window, unless the second was started quietly by
+    Windows) and leaves. Returns the server, or None when another copy runs."""
+    name = f"JobSavingBot-{os.environ.get('USERNAME') or os.environ.get('USER') or 'user'}"
+    other = QtNetwork.QLocalSocket()
+    other.connectToServer(name)
+    if other.waitForConnected(500):
+        other.write(b"quiet" if quiet else b"show")
+        other.flush()
+        other.waitForBytesWritten(500)
+        other.disconnectFromServer()
+        return None
+    QtNetwork.QLocalServer.removeServer(name)  # left by a copy that crashed
+    server = QtNetwork.QLocalServer(app)
+    server.listen(name)
+    return server
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = list(sys.argv if argv is None else argv)
+    background = winstart.BACKGROUND_FLAG in argv
+    app = QtWidgets.QApplication([arg for arg in argv if arg != winstart.BACKGROUND_FLAG])
     app.setApplicationName("Job Saving Bot")
+    app.setQuitOnLastWindowClosed(False)
+    server = _single_instance(app, quiet=background)
+    if server is None:
+        return 0
     window = MainWindow()
-    window.show()
+
+    def knocked():
+        while server.hasPendingConnections():
+            other = server.nextPendingConnection()
+            other.waitForReadyRead(500)
+            if bytes(other.readAll().data()) != b"quiet":
+                window.bring_up()
+            other.disconnectFromServer()
+
+    server.newConnection.connect(knocked)
+    # Started by Windows: into the tray, if there is one and KIASA is connected.
+    if not (background and window._tray is not None and window._remote is not None):
+        window.show()
     return app.exec()

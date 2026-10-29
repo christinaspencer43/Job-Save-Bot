@@ -85,6 +85,11 @@ class Settings:
     google_key_file: str = ""
     google_sheet_secret: str = ""
 
+    # KIASA (kiasa.py): the code an admin made on KIASA's job desk. Empty: the
+    # bot is not connected. Whoever has it can post jobs as this bot - it is
+    # replaced (and the old one ends) with "New code" on KIASA.
+    kiasa_code: str = ""
+
     @classmethod
     def load(cls) -> "Settings":
         path = settings_path()

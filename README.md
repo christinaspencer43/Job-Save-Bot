@@ -85,6 +85,52 @@ The status line counts **Saved / Removed / Skipped / Failed**.
 
    `google-key.json` (the robot's key, kept next to `app.py`) travels with the
    folder - keep the folder private.
+3. **KIASA** - optional (box **4 - KIASA**). Each saved job is also posted to
+   the day's list on KIASA's job desk, and KIASA's admins start, stop, watch and
+   schedule runs from there. See below.
+
+## KIASA: run it from KIASA's job desk
+
+On KIASA, an admin opens **Job desk > Jobs > Jobright bot > Connect a
+computer**, names this computer and gets a code (`KIASA-BOT1....`, shown once).
+In the bot's box **4 - KIASA**: paste it, press **Connect**, and tick **Start
+with Windows and keep running in the tray**. Then, on KIASA:
+
+- the bot shows **Online** (it checks in every 3 seconds; after a minute without
+  word it shows **Offline**);
+- **Start** with a number of cards: the bot takes it within seconds, opens its
+  Chrome first if it is closed, and KIASA shows each card, the counts and each
+  job posted, live; **Stop** stops it at the current step;
+- the gear sets a **daily limit** of cards (default 150) and a **schedule**
+  (say weekdays at 08:00, 30 cards; if the computer is off then, the run starts
+  when it is back, the same day);
+- when Jobright signs the bot out, KIASA says so: sign in again in the bot's
+  Chrome (from anywhere with Chrome Remote Desktop), then press Start.
+
+Runs started here with the window's **Start** are shown on KIASA too.
+
+How it is kept safe:
+
+- KIASA never calls this computer. The bot only asks (no port is opened, no
+  router change); KIASA's database answers only to its key, and only through
+  three functions: check in, report a run, post the saved jobs.
+- The key can only do that: it reads nothing on KIASA (no chats, members or
+  résumés). On KIASA, **New code** replaces it and **Disconnect** ends it at once.
+- The code is kept in `settings.json` (below). Keep this Windows account private.
+
+Staying ready, with the computer on all the time:
+
+- **Start with Windows**: the app starts in the tray when you sign in to
+  Windows, and a Windows task ("Job Saving Bot - keep running") starts it
+  again within 10 minutes if it ever stops. Neither needs administrator
+  rights; untick the box to remove both.
+- While connected, the bot keeps the computer from going to sleep (the screen
+  may still turn off). Closing the window leaves it in the tray; right-click
+  the tray icon > **Quit** to stop it.
+- Windows Update: set *active hours* so it does not restart in the middle of a
+  run. After a restart the bot comes back by itself.
+- Jobs saved while the internet is down wait in
+  `%LOCALAPPDATA%\JobSavingBot\kiasa_outbox.jsonl` and go when it is back.
 
 ## Settings
 
@@ -104,6 +150,7 @@ The status line counts **Saved / Removed / Skipped / Failed**.
 - `google_sheet_url`, `google_key_file` (empty: `google-key.json` next to
   `app.py`), `google_sheet_secret` (Apps Script only) - the Google Sheet box
   writes them
+- `kiasa_code` - the KIASA box writes it (empty: not connected)
 
 ## Updating the extension
 

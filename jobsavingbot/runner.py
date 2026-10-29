@@ -82,11 +82,13 @@ class SetupError(RuntimeError):
 class BotRunner:
     """Owns the Playwright session and runs the loop."""
 
-    def __init__(self, settings, log, on_stats=None, on_progress=None):
+    def __init__(self, settings, log, on_stats=None, on_progress=None, on_saved=None):
         self.settings = settings
         self._log = log
         self._on_stats = on_stats or (lambda stats: None)
         self._on_progress = on_progress or (lambda done, total: None)
+        # Each saved job (make_row's fields), for KIASA.
+        self._on_saved = on_saved or (lambda job: None)
         self.stop_event = threading.Event()
         self.stats = RunStats()
         self.stopped_reason = ""
@@ -539,20 +541,18 @@ class BotRunner:
         self.log(f"    {message}", "ok" if ok else "error")
         self._banner(job_page, f"Job Intelligence - {message}", "ok" if ok else "error")
         if ok:
-            self._to_sheet(job_page, url, save)
+            self._record(job_page, url, save)
         return ok
 
-    def _to_sheet(self, job_page, url: str, save) -> None:
-        """Queue the saved job for the Google Sheet (sent in the background)."""
-        if not self.sheet.enabled:
-            return
+    def _record(self, job_page, url: str, save) -> None:
+        """Hand the saved job on: to KIASA (on_saved) and the Google Sheet (both sent in the background)."""
         card = self._current_card
         read = getattr(save, "detail", None) or {}  # what the extension read off the posting
         try:
             page_title = (job_page.title() or "").strip()
         except Exception:
             page_title = ""
-        self.sheet.add(make_row(
+        row = make_row(
             title=read.get("jobTitle") or (card.heading if card else "") or page_title,
             company=read.get("company") or (card.company if card else ""),
             location=read.get("location") or "",
@@ -560,7 +560,13 @@ class BotRunner:
             jobright_url=card.link if card else "",
             card=KIND_TEXT.get(card.kind, "") if card else "",
             result="Already on board" if getattr(save, "already_saved", False) else "Saved",
-        ))
+        )
+        try:
+            self._on_saved(row)
+        except Exception as exc:  # noqa: BLE001 - KIASA's outbox must never cost a card
+            self.log(f"    could not hand the job to KIASA: {exc}", "warn")
+        if self.sheet.enabled:
+            self.sheet.add(row)
 
     def _wait_until_ready(self, page, timeout: float) -> None:
         """Wait until the posting has really rendered: many job sites build the

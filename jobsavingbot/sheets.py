@@ -221,14 +221,21 @@ def check_connection(url: str, secret: str = "", key_file=None) -> dict:
 
 
 class SheetLogger:
-    """Queues saved jobs and sends them to the sheet from one background thread."""
+    """Queues saved jobs and sends them to the sheet from one background thread.
+
+    KIASA's sender (kiasa.KiasaOutbox) is the same, with its own name, outbox
+    file and `_send`."""
+
+    LABEL = "Google Sheet"
+    ITEMS = "row(s)"
+    THREAD = "sheet-sender"
 
     def __init__(self, url: str, secret: str = "", log=None, outbox: Path | None = None, key_file=None):
         self.url = (url or "").strip()
         self.secret = secret or ""
         self.key_file = key_file_path(str(key_file or ""))
         self._log = log or (lambda message, level="info": None)
-        self.outbox = Path(outbox) if outbox else outbox_path()
+        self.outbox = Path(outbox) if outbox else self.default_outbox()
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._attempts = 0      # sends tried so far
@@ -238,9 +245,17 @@ class SheetLogger:
         self._last_error = ""
         self.sent = 0
 
+    @staticmethod
+    def default_outbox() -> Path:
+        return outbox_path()
+
     @property
     def enabled(self) -> bool:
         return self.url.startswith(("https://", "http://"))
+
+    def _send(self, rows: list[dict]) -> dict:
+        """Send the rows; {"added": n, "skipped": n}. Raises when they did not go."""
+        return send_rows(self.url, self.secret, self.key_file, rows)
 
     def pending(self) -> list[dict]:
         with self._lock:
@@ -263,7 +278,7 @@ class SheetLogger:
         self._closed = False
         if self.pending():
             self._wake.set()
-        self._thread = threading.Thread(target=self._run, daemon=True, name="sheet-sender")
+        self._thread = threading.Thread(target=self._run, daemon=True, name=self.THREAD)
         self._thread.start()
 
     def flush(self, timeout: float = 20.0) -> bool:
@@ -284,7 +299,7 @@ class SheetLogger:
         self._closed = True
         self._wake.set()
         if self.pending():
-            self._log(f"Google Sheet: {len(self.pending())} row(s) not sent yet - they go with the next run", "warn")
+            self._log(f"{self.LABEL}: {len(self.pending())} {self.ITEMS} not sent yet - they go with the next run", "warn")
 
     # -- the sender thread ---------------------------------------------------
 
@@ -303,11 +318,11 @@ class SheetLogger:
         if not rows:
             return False
         try:
-            reply = send_rows(self.url, self.secret, self.key_file, rows)
+            reply = self._send(rows)
         except Exception as exc:  # noqa: BLE001 - kept in the outbox, tried again
             message = str(exc).splitlines()[0][:200] if str(exc) else type(exc).__name__
             if message != self._last_error:  # say it once, not every 30 s
-                self._log(f"Google Sheet: could not send {len(rows)} row(s) ({message}) - will try again", "warn")
+                self._log(f"{self.LABEL}: could not send {len(rows)} {self.ITEMS} ({message}) - will try again", "warn")
             self._last_error = message
             self._last_ok = False
             self._attempts += 1
@@ -319,7 +334,7 @@ class SheetLogger:
             self._write(left)
         self.sent += int(reply.get("added") or 0)
         added, skipped = int(reply.get("added") or 0), int(reply.get("skipped") or 0)
-        self._log(f"Google Sheet: added {added} row(s)" + (f", {skipped} already there" if skipped else ""), "ok")
+        self._log(f"{self.LABEL}: added {added} {self.ITEMS}" + (f", {skipped} already there" if skipped else ""), "ok")
         self._last_ok = True
         self._attempts += 1
         return bool(self.pending())
