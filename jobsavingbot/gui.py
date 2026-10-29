@@ -180,9 +180,10 @@ class MainWindow(QtWidgets.QWidget):
         self._told_tray = False
 
         self.setWindowTitle("Job Saving Bot")
-        self.setMinimumSize(760, 700)
+        self.setMinimumSize(760, 420)
         self.setStyleSheet(STYLESHEET)
         self._build()
+        self._fit_to_screen()
         self.status_ready.connect(self._show_chrome_status)
         self.kiasa_status.connect(self._show_kiasa_status)
         self.kiasa_run.connect(self._kiasa_run)
@@ -208,8 +209,27 @@ class MainWindow(QtWidgets.QWidget):
 
     # -- layout ------------------------------------------------------------
 
+    def _fit_to_screen(self):
+        """Open as tall as everything needs, within the screen; a shorter screen scrolls."""
+        screen = self.screen().availableGeometry() if self.screen() else None
+        wanted = self._page.sizeHint().height() + 8
+        width, height = 900, max(600, wanted)
+        if screen is not None:
+            width, height = min(width, screen.width()), min(height, screen.height() - 40)
+        self.resize(width, height)
+
     def _build(self):
-        root = QtWidgets.QVBoxLayout(self)
+        # Everything sits in a scrolling page, so a short screen never squeezes
+        # the boxes: the window scrolls instead.
+        outer = QtWidgets.QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QtWidgets.QFrame.Shape.NoFrame)
+        self._page = QtWidgets.QWidget()
+        scroll.setWidget(self._page)
+        outer.addWidget(scroll)
+        root = QtWidgets.QVBoxLayout(self._page)
         root.setContentsMargins(16, 14, 16, 14)
         root.setSpacing(12)
 
@@ -342,6 +362,7 @@ class MainWindow(QtWidgets.QWidget):
 
         self.log_view = QtWidgets.QTextEdit()
         self.log_view.setReadOnly(True)
+        self.log_view.setMinimumHeight(160)
         root.addWidget(self.log_view, 1)
 
         footer = QtWidgets.QHBoxLayout()
@@ -760,6 +781,9 @@ class MainWindow(QtWidgets.QWidget):
     def _connect_kiasa(self, code: str):
         """Connect with a code from KIASA (or the saved one, at start)."""
         try:
+            if not code.strip():
+                raise ValueError("Paste the code from KIASA first (Job desk > Jobs > Jobright bot > "
+                                 "Connect a computer > Copy the code), then press Connect.")
             connection = kiasa_mod.parse_code(code)
         except ValueError as exc:
             self._show_kiasa_status(str(exc), "error")

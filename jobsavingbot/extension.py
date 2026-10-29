@@ -192,6 +192,8 @@ async (args) => {
     jobTitle: say(job.title),
     company: say(job.company),
     location: say(job.location),
+    // The job's description as read (for KIASA's tailored résumés), its lines kept.
+    description: typeof job.description === "string" ? job.description.trim().slice(0, 30000) : "",
     answered: true,
   };
 }

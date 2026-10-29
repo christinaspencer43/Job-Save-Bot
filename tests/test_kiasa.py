@@ -177,12 +177,14 @@ def test_saved_jobs_are_posted_once_even_when_sent_twice(fake, tmp_path):
     client = kiasa.KiasaClient(kiasa.parse_code(make_code(fake.url)))
     logs = []
     outbox = kiasa.KiasaOutbox(client, log=lambda message, level="info": logs.append(message), outbox=tmp_path / "out.jsonl")
-    row = {"job_url": "https://jobs.lever.co/acme/1?utm_medium=bot", "title": "Data Analyst", "company": "Acme", "location": "Remote"}
+    row = {"job_url": "https://jobs.lever.co/acme/1?utm_medium=bot", "title": "Data Analyst", "company": "Acme", "location": "Remote",
+           "description": "Analyse data.\nSQL and Python."}
     outbox.add(kiasa.job_for_kiasa(row, "run-9"))
     outbox.add(kiasa.job_for_kiasa(row, "run-9"))
     assert outbox.flush(10)
     assert list(fake.jobs) == ["https://jobs.lever.co/acme/1"]
     assert fake.jobs["https://jobs.lever.co/acme/1"]["run"] == "run-9"
+    assert fake.jobs["https://jobs.lever.co/acme/1"]["description"] == "Analyse data.\nSQL and Python."  # for tailored résumés
     assert any(line.startswith("KIASA: added 1 job(s)") for line in logs), logs
 
 

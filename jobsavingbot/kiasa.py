@@ -184,6 +184,8 @@ def job_for_kiasa(saved: dict, run: str | None) -> dict:
         "title": (saved.get("title") or "")[:200],
         "company": (saved.get("company") or "")[:120],
         "location": (saved.get("location") or "")[:120],
+        # Its description, for the members' tailored résumés on KIASA.
+        "description": (saved.get("description") or "")[:30000],
         "run": run or "",
     }
 

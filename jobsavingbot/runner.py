@@ -562,7 +562,8 @@ class BotRunner:
             result="Already on board" if getattr(save, "already_saved", False) else "Saved",
         )
         try:
-            self._on_saved(row)
+            # KIASA also takes the description the extension read (the sheet's row does not).
+            self._on_saved({**row, "description": str(read.get("description") or "")})
         except Exception as exc:  # noqa: BLE001 - KIASA's outbox must never cost a card
             self.log(f"    could not hand the job to KIASA: {exc}", "warn")
         if self.sheet.enabled:
